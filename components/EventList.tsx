@@ -8,6 +8,10 @@ interface EventListProps {
   badmintonConfig: BadmintonConfig;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<EventExpense>) => void;
+  totalSavings: number;
+  totalOverspend: number;
+  savingsCount: number;
+  overspendCount: number;
 }
 
 // Helper component for text-based number input to fix alignment and editing UX
@@ -66,7 +70,7 @@ const getIcon = (type: string) => {
   }
 };
 
-export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, onDelete, onUpdate }) => {
+export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, onDelete, onUpdate, totalSavings, totalOverspend, savingsCount, overspendCount }) => {
   
   // Combine Regular Events with Badminton (Visual only)
   const allEvents = [...events];
@@ -83,8 +87,14 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
       <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
         <h3 className="text-lg font-bold text-slate-800">Budget Tracker</h3>
         <div className="text-xs font-medium text-slate-500 flex gap-4">
-          <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Under Budget</span>
-          <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-rose-500"></div> Over Budget</span>
+          <span className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-emerald-500"></div> 
+            Under Budget ({savingsCount}) (RM {totalSavings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+          </span>
+          <span className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-rose-500"></div> 
+            Over Budget ({overspendCount}) (RM {totalOverspend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+          </span>
         </div>
       </div>
       

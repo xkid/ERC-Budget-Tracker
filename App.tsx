@@ -12,7 +12,7 @@ import { SummaryCard } from './components/SummaryCard';
 import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
 import { BadmintonCalculator } from './components/BadmintonCalculator';
-import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign } from 'lucide-react';
 
 const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
@@ -181,34 +181,41 @@ const App: React.FC = () => {
   const actualBalance = totalBudget - totalActualSpent;
 
   // Calculate Variance for events that have actuals
-  const { variance, totalPlannedForCompleted } = useMemo(() => {
+  const { variance, totalPlannedForCompleted, totalSavings, totalOverspend, savingsCount, overspendCount } = useMemo(() => {
     let plannedSum = 0;
     let actualSum = 0;
+    let savings = 0;
+    let overspend = 0;
+    let sCount = 0;
+    let oCount = 0;
     
     events.forEach(e => {
         if (e.actualAmount !== undefined && e.actualAmount > 0) {
             plannedSum += e.amount;
             actualSum += e.actualAmount;
+            const diff = e.amount - e.actualAmount; // Positive = Savings, Negative = Overspend
+            if (diff > 0) {
+                savings += diff;
+                sCount++;
+            } else if (diff < 0) {
+                overspend += Math.abs(diff);
+                oCount++;
+            }
         }
     });
     
     return {
         variance: plannedSum - actualSum, // Positive = Under Budget (Good), Negative = Over Budget (Bad)
-        totalPlannedForCompleted: plannedSum
+        totalPlannedForCompleted: plannedSum,
+        totalSavings: savings,
+        totalOverspend: overspend,
+        savingsCount: sCount,
+        overspendCount: oCount
     };
   }, [events]);
 
   const isOverBudget = variance < 0;
   
-  // Alert color logic for Actuals
-  const getActualsStatusColor = () => {
-      // If we spent more than planned on the specific events we tracked
-      if (variance < 0) return 'negative'; 
-      // If we are getting close (e.g., spent > 90% of planned for those events)
-      if (totalPlannedForCompleted > 0 && (totalPlannedForCompleted - variance) / totalPlannedForCompleted > 0.9) return 'warning';
-      return 'neutral';
-  };
-
   // --- Event Handlers ---
   
   const handleAddEvent = () => {
@@ -308,45 +315,37 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Top Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <SummaryCard 
+            title="Total Budget" 
+            amount={totalBudget} 
+            type="positive"
+            icon={<Coins className="w-5 h-5" />}
+          />
+          <SummaryCard 
+              title="Planned Expenses" 
+              amount={grandTotalPlanned} 
+              type="neutral"
+              icon={<DollarSign className="w-5 h-5" />}
+            />
+          <SummaryCard 
+              title="Actual Expenses" 
+              amount={totalActualSpent} 
+              type="neutral"
+              icon={<Receipt className="w-5 h-5" />}
+          />
           <SummaryCard 
             title="Projected Balance" 
             amount={projectedBalance} 
-            type={projectedBalance >= 0 ? 'info' : 'negative'}
+            type="info"
             icon={<Wallet className="w-5 h-5" />}
           />
           <SummaryCard 
             title="Actual Balance" 
             amount={actualBalance} 
-            type={actualBalance > 0 ? 'positive' : 'neutral'}
+            type="info"
+            icon={<DollarSign className="w-5 h-5" />}
           />
-          
-          <div className="relative">
-             <SummaryCard 
-                title="Total Planned Expenses" 
-                amount={grandTotalPlanned} 
-                type="neutral"
-              />
-          </div>
-
-          <div className="relative">
-            {totalActualSpent > 0 && (
-                <div className={`absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1
-                    ${isOverBudget ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
-                    {isOverBudget ? 'Over Budget' : 'Under Budget'}
-                    <span>{isOverBudget ? '-' : '+'} RM {Math.abs(variance).toLocaleString()}</span>
-                </div>
-            )}
-            <SummaryCard 
-                title="Event Actuals (YTD)" 
-                amount={totalActualSpent} 
-                type={getActualsStatusColor() === 'negative' ? 'negative' : getActualsStatusColor() === 'warning' ? 'info' : 'neutral'} // Reusing info for yellow-ish look or handle custom
-                icon={getActualsStatusColor() === 'negative' ? <AlertTriangle className="w-5 h-5 text-rose-500" /> : <Receipt className="w-5 h-5" />}
-            />
-             {getActualsStatusColor() === 'warning' && (
-                  <div className="absolute inset-0 border-2 border-yellow-400 rounded-xl pointer-events-none opacity-50"></div>
-             )}
-          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -410,6 +409,10 @@ const App: React.FC = () => {
               badmintonConfig={badmintonConfig}
               onDelete={handleDeleteEvent}
               onUpdate={handleUpdateEvent}
+              totalSavings={totalSavings}
+              totalOverspend={totalOverspend}
+              savingsCount={savingsCount}
+              overspendCount={overspendCount}
             />
           </div>
 
