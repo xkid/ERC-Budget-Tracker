@@ -1,3 +1,4 @@
+
 export enum Month {
   Jan = 'Jan',
   Feb = 'Feb',
@@ -22,6 +23,16 @@ export interface IncomeSource {
   monthlyAmounts: Record<string, number>; // Key is Month enum
 }
 
+export type TaskStatus = 'Todo' | 'InProgress' | 'Done';
+
+export interface EventTask {
+  id: string;
+  title: string;
+  assignee: string;
+  budget: number;
+  status: TaskStatus;
+}
+
 export interface EventExpense {
   id: string;
   name: string;
@@ -31,6 +42,7 @@ export interface EventExpense {
   isRecurring?: boolean;
   notes?: string;
   type: 'Event' | 'Birthday' | 'Trip' | 'Dinner' | 'Sport';
+  tasks?: EventTask[];
 }
 
 export interface BadmintonSession {

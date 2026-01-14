@@ -19,12 +19,12 @@ export const BadmintonCalculator: React.FC<BadmintonCalculatorProps> = ({ config
   const [bulkSessions, setBulkSessions] = useState(4);
 
   // Calculate annual cost based on monthly settings
-  const annualCost = Object.values(config.months).reduce((acc, settings) => {
+  const annualCost = Object.values(config.months).reduce<number>((acc, settings: MonthlyBadmintonSettings) => {
     if (!settings.isSelected) return acc;
     return acc + settings.sessions.reduce((sAcc, s) => sAcc + (s.rate * s.courts * s.hours), 0);
   }, 0);
 
-  const activeMonthsCount = Object.values(config.months).filter(m => m.isSelected).length;
+  const activeMonthsCount = Object.values(config.months).filter((m: MonthlyBadmintonSettings) => m.isSelected).length;
 
   const toggleMonth = (month: string) => {
     const newMonths = { ...config.months };

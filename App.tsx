@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { 
   INITIAL_CARRY_OVER, 
   INITIAL_INCOME_SOURCES, 
@@ -12,7 +14,8 @@ import { SummaryCard } from './components/SummaryCard';
 import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
 import { BadmintonCalculator } from './components/BadmintonCalculator';
-import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign, FileText } from 'lucide-react';
+import { EventPlanner } from './components/EventPlanner';
+import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign, FileText, FileDown } from 'lucide-react';
 
 const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
@@ -53,6 +56,9 @@ const App: React.FC = () => {
     return parsed;
   });
   
+  // View State for Routing
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
+
   // Manual Input State
   const [newMonth, setNewMonth] = useState<Month>(Month.Jan);
   const [newName, setNewName] = useState('');
@@ -78,165 +84,11 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEYS.BADMINTON, JSON.stringify(badmintonConfig));
   }, [badmintonConfig]);
 
-  // --- Data Management Handlers ---
-
-  const handleExport = () => {
-    const data: AppData = {
-      events,
-      incomeSources,
-      carryOver,
-      badmintonConfig,
-      lastUpdated: new Date().toISOString()
-    };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rec-club-budget-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportCSV = () => {
-    // Helper to escape CSV fields
-    const escape = (val: string | number) => {
-        if (typeof val === 'number') return val.toFixed(2);
-        const str = String(val);
-        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-            return `"${str.replace(/"/g, '""')}"`;
-        }
-        return str;
-    };
-
-    const rows: string[][] = [];
-
-    // 1. Summary
-    rows.push(['SUMMARY']);
-    rows.push(['Total Budget', 'Planned Expenses', 'Projected Balance', 'Actual Expenses', 'Actual Balance']);
-    rows.push([totalBudget, grandTotalPlanned, projectedBalance, totalActualSpent, actualBalance].map(escape));
-    rows.push([]);
-
-    // 2. Income Sources
-    rows.push(['INCOME SOURCES']);
-    const monthHeaders = MONTH_ORDER.map(m => m);
-    rows.push(['Source', 'Category', 'SubCategory', ...monthHeaders, 'Total']);
-    incomeSources.forEach(source => {
-        const monthlyValues = MONTH_ORDER.map(m => source.monthlyAmounts[m] || 0);
-        const sourceTotal = monthlyValues.reduce((a, b) => a + b, 0);
-        rows.push([
-            source.name,
-            source.category,
-            source.subCategory,
-            ...monthlyValues,
-            sourceTotal
-        ].map(escape));
-    });
-    rows.push([]);
-
-    // 3. Events & Expenses
-    rows.push(['EXPENSES (EVENTS & BADMINTON)']);
-    rows.push(['Month', 'Description', 'Type', 'Planned Amount', 'Actual Amount', 'Variance']);
-    
-    MONTH_ORDER.forEach(month => {
-        // Badminton
-        const badmSettings = badmintonConfig.months[month];
-        if (badmSettings && badmSettings.isSelected) {
-            const badmCost = badmSettings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0);
-             rows.push([
-                month,
-                'Badminton Sessions',
-                'Sport',
-                badmCost,
-                0, 
-                badmCost // Variance (Planned - Actual)
-            ].map(escape));
-        }
-
-        // Events
-        const monthEvents = events.filter(e => e.month === month);
-        monthEvents.forEach(e => {
-            const planned = e.amount;
-            const actual = e.actualAmount || 0;
-            const variance = planned - actual;
-            rows.push([
-                month,
-                e.name,
-                e.type,
-                planned,
-                actual,
-                variance
-            ].map(escape));
-        });
-    });
-
-    const csvContent = rows.map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `rec_club_budget_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = event.target?.result as string;
-        const data: AppData = JSON.parse(json);
-
-        if (data.events && data.incomeSources && typeof data.carryOver === 'number' && data.badmintonConfig) {
-          if (confirm('This will overwrite current data. Are you sure?')) {
-            setEvents(data.events);
-            setIncomeSources(data.incomeSources);
-            setCarryOver(data.carryOver);
-            setBadmintonConfig(data.badmintonConfig);
-            alert('Data imported successfully!');
-          }
-        } else {
-          alert('Invalid file format. Missing required fields.');
-        }
-      } catch (err) {
-        console.error(err);
-        alert('Failed to parse JSON file.');
-      }
-      // Reset input
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-    reader.readAsText(file);
-  };
-
-  const handleReset = () => {
-    if (confirm('Are you sure you want to CLEAR all data? This will set all values to zero and empty lists. This cannot be undone.')) {
-      setEvents([]);
-      setIncomeSources(prev => prev.map(source => {
-        const zeroedMonths: Record<string, number> = {};
-        MONTH_ORDER.forEach(m => zeroedMonths[m] = 0);
-        return { ...source, monthlyAmounts: zeroedMonths };
-      }));
-      setCarryOver(0);
-      setBadmintonConfig(createEmptyBadmintonConfig());
-      
-      localStorage.removeItem(STORAGE_KEYS.EVENTS);
-      localStorage.removeItem(STORAGE_KEYS.INCOME);
-      localStorage.removeItem(STORAGE_KEYS.CARRY_OVER);
-      localStorage.removeItem(STORAGE_KEYS.BADMINTON);
-    }
-  };
-
   // --- Calculations ---
   
   const yearlyIncome = useMemo(() => {
-    return incomeSources.reduce((total, source) => {
-      const sourceTotal = Object.values(source.monthlyAmounts).reduce((acc, val) => acc + val, 0);
+    return incomeSources.reduce<number>((total, source) => {
+      const sourceTotal = Object.values(source.monthlyAmounts).reduce((acc, val: number) => acc + val, 0);
       return total + sourceTotal;
     }, 0);
   }, [incomeSources]);
@@ -244,7 +96,7 @@ const App: React.FC = () => {
   const totalBudget = carryOver + yearlyIncome;
 
   const totalBadmintonCost = useMemo(() => {
-    return Object.values(badmintonConfig.months).reduce((acc, settings) => {
+    return Object.values(badmintonConfig.months).reduce<number>((acc, settings: MonthlyBadmintonSettings) => {
       if (!settings.isSelected) return acc;
       return acc + settings.sessions.reduce((sAcc, s) => sAcc + (s.rate * s.courts * s.hours), 0);
     }, 0);
@@ -298,7 +150,267 @@ const App: React.FC = () => {
   }, [events]);
 
   const isOverBudget = variance < 0;
-  
+
+  // --- Data Management Handlers ---
+
+  const handleExport = () => {
+    const data: AppData = {
+      events,
+      incomeSources,
+      carryOver,
+      badmintonConfig,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rec-club-budget-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCSV = () => {
+    const escape = (val: string | number) => {
+        if (typeof val === 'number') return val.toFixed(2);
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+    };
+
+    const rows: string[][] = [];
+    rows.push(['SUMMARY']);
+    rows.push(['Total Budget', 'Planned Expenses', 'Projected Balance', 'Actual Expenses', 'Actual Balance']);
+    rows.push([totalBudget, grandTotalPlanned, projectedBalance, totalActualSpent, actualBalance].map(escape));
+    rows.push([]);
+
+    rows.push(['INCOME SOURCES']);
+    const monthHeaders = MONTH_ORDER.map(m => m);
+    rows.push(['Source', 'Category', 'SubCategory', ...monthHeaders, 'Total']);
+    incomeSources.forEach(source => {
+        const monthlyValues = MONTH_ORDER.map(m => source.monthlyAmounts[m] || 0);
+        const sourceTotal = monthlyValues.reduce((a, b) => a + b, 0);
+        rows.push([source.name, source.category, source.subCategory, ...monthlyValues, sourceTotal].map(escape));
+    });
+    rows.push([]);
+
+    rows.push(['EXPENSES (EVENTS & BADMINTON)']);
+    rows.push(['Month', 'Description', 'Type', 'Planned Amount', 'Actual Amount', 'Variance']);
+    MONTH_ORDER.forEach(month => {
+        const badmSettings = badmintonConfig.months[month];
+        if (badmSettings && badmSettings.isSelected) {
+            const badmCost = badmSettings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0);
+             rows.push([month, 'Badminton Sessions', 'Sport', badmCost, 0, badmCost].map(escape));
+        }
+        const monthEvents = events.filter(e => e.month === month);
+        monthEvents.forEach(e => {
+            const planned = e.amount;
+            const actual = e.actualAmount || 0;
+            const variance = planned - actual;
+            rows.push([month, e.name, e.type, planned, actual, variance].map(escape));
+        });
+    });
+
+    rows.push([]);
+    rows.push(['EVENT PLANNER TASKS (DETAIL)']);
+    rows.push(['Month', 'Event Name', 'Task Description', 'Assignee', 'Status', 'Estimated Cost']);
+    MONTH_ORDER.forEach(month => {
+        const monthEvents = events.filter(e => e.month === month);
+        monthEvents.forEach(e => {
+            if (e.tasks && e.tasks.length > 0) {
+                e.tasks.forEach(task => {
+                    rows.push([month, e.name, task.title, task.assignee, task.status, task.budget].map(escape));
+                });
+            }
+        });
+    });
+
+    const csvContent = rows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rec_club_budget_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const fmtMoney = (num: number) => `RM ${num.toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
+
+    // Title
+    doc.setFontSize(18);
+    doc.text("Recreation Club Budget Summary", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    // 1. Summary Table
+    const summaryData = [
+      ["Total Budget", fmtMoney(totalBudget)],
+      ["Planned Expenses", fmtMoney(grandTotalPlanned)],
+      ["Projected Balance", fmtMoney(projectedBalance)],
+      ["Actual Expenses", fmtMoney(totalActualSpent)],
+      ["Actual Balance", fmtMoney(actualBalance)],
+    ];
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Metric', 'Amount']],
+      body: summaryData,
+      theme: 'striped',
+      headStyles: { fillColor: [16, 185, 129] }, // Emerald color
+      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' } }
+    });
+
+    // 2. Income Table
+    const incomeData = incomeSources.map(s => {
+      const total = Object.values(s.monthlyAmounts).reduce((a, b) => a + b, 0);
+      return [s.name, s.category, fmtMoney(total)];
+    });
+    // Add Carry Over as a row
+    incomeData.unshift(["Previous Year Balance (2025)", "Carry Over", fmtMoney(carryOver)]);
+    // Add Total Income
+    incomeData.push(["TOTAL INCOME", "", fmtMoney(totalBudget)]);
+
+    doc.text("Income Sources", 14, (doc as any).lastAutoTable.finalY + 15);
+    
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 20,
+      head: [['Source', 'Category', 'Annual Total']],
+      body: incomeData,
+      theme: 'grid',
+      headStyles: { fillColor: [59, 130, 246] }, // Blue color
+      columnStyles: { 2: { halign: 'right' } },
+      didParseCell: (data) => {
+        if (data.row.index === incomeData.length - 1) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [241, 245, 249];
+        }
+      }
+    });
+
+    // 3. Expenses Table
+    const expenseData: any[] = [];
+    MONTH_ORDER.forEach(month => {
+      // Badminton
+      const badmSettings = badmintonConfig.months[month];
+      if (badmSettings && badmSettings.isSelected) {
+        const cost = badmSettings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0);
+        expenseData.push([month, "Badminton Sessions", "Sport", fmtMoney(cost), fmtMoney(0)]);
+      }
+      // Events
+      const monthEvents = events.filter(e => e.month === month);
+      monthEvents.forEach(e => {
+        expenseData.push([month, e.name, e.type, fmtMoney(e.amount), fmtMoney(e.actualAmount || 0)]);
+      });
+    });
+
+    // Add total row for expenses
+    expenseData.push(["TOTAL", "", "", fmtMoney(grandTotalPlanned), fmtMoney(totalActualSpent)]);
+
+    doc.text("Expense Breakdown", 14, (doc as any).lastAutoTable.finalY + 15);
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 20,
+      head: [['Month', 'Description', 'Type', 'Planned', 'Actual']],
+      body: expenseData,
+      theme: 'grid',
+      headStyles: { fillColor: [244, 63, 94] }, // Rose color
+      columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } },
+      didParseCell: (data) => {
+        if (data.row.index === expenseData.length - 1) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [241, 245, 249];
+        }
+      }
+    });
+
+    // 4. Detailed Tasks Table
+    const taskData: any[] = [];
+    MONTH_ORDER.forEach(month => {
+        const monthEvents = events.filter(e => e.month === month);
+        monthEvents.forEach(e => {
+            if (e.tasks && e.tasks.length > 0) {
+                e.tasks.forEach(task => {
+                    taskData.push([month, e.name, task.title, task.assignee, task.status, fmtMoney(task.budget)]);
+                });
+            }
+        });
+    });
+
+    if (taskData.length > 0) {
+        doc.addPage(); // Start details on new page usually
+        doc.text("Event Planner Details", 14, 20);
+        
+        autoTable(doc, {
+            startY: 25,
+            head: [['Month', 'Event', 'Task', 'Assignee', 'Status', 'Cost']],
+            body: taskData,
+            theme: 'striped',
+            headStyles: { fillColor: [100, 116, 139] }, // Slate color
+            columnStyles: { 5: { halign: 'right' } }
+        });
+    }
+
+    doc.save(`rec_club_summary_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = event.target?.result as string;
+        const data: AppData = JSON.parse(json);
+
+        if (data.events && data.incomeSources && typeof data.carryOver === 'number' && data.badmintonConfig) {
+          if (confirm('This will overwrite current data. Are you sure?')) {
+            setEvents(data.events);
+            setIncomeSources(data.incomeSources);
+            setCarryOver(data.carryOver);
+            setBadmintonConfig(data.badmintonConfig);
+            alert('Data imported successfully!');
+          }
+        } else {
+          alert('Invalid file format. Missing required fields.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to parse JSON file.');
+      }
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  const handleReset = () => {
+    if (confirm('Are you sure you want to CLEAR all data? This will set all values to zero and empty lists. This cannot be undone.')) {
+      setEvents([]);
+      setIncomeSources(prev => prev.map(source => {
+        const zeroedMonths: Record<string, number> = {};
+        MONTH_ORDER.forEach(m => zeroedMonths[m] = 0);
+        return { ...source, monthlyAmounts: zeroedMonths };
+      }));
+      setCarryOver(0);
+      setBadmintonConfig(createEmptyBadmintonConfig());
+      
+      localStorage.removeItem(STORAGE_KEYS.EVENTS);
+      localStorage.removeItem(STORAGE_KEYS.INCOME);
+      localStorage.removeItem(STORAGE_KEYS.CARRY_OVER);
+      localStorage.removeItem(STORAGE_KEYS.BADMINTON);
+    }
+  };
+
   // --- Event Handlers ---
   
   const handleAddEvent = () => {
@@ -310,7 +422,8 @@ const App: React.FC = () => {
       month: newMonth,
       amount: amountVal,
       actualAmount: 0,
-      type: 'Event' 
+      type: 'Event',
+      tasks: []
     };
     setEvents(prev => [...prev, newEvent]);
     setNewName('');
@@ -330,6 +443,10 @@ const App: React.FC = () => {
       }
       return updatedEvent;
     }));
+  };
+  
+  const handleFullUpdateEvent = (updatedEvent: EventExpense) => {
+      setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
   };
 
   // --- Income Handlers ---
@@ -359,6 +476,21 @@ const App: React.FC = () => {
   const handleUpdateIncomeDetails = (id: string, name: string, category: string) => {
       setIncomeSources(prev => prev.map(s => s.id === id ? { ...s, name, category: category as IncomeSource['category'] } : s));
   };
+
+  // --- View Switching ---
+
+  if (activeEventId) {
+    const activeEvent = events.find(e => e.id === activeEventId);
+    if (activeEvent) {
+      return (
+        <EventPlanner 
+          event={activeEvent} 
+          onBack={() => setActiveEventId(null)}
+          onUpdateEvent={handleFullUpdateEvent}
+        />
+      );
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
@@ -390,6 +522,7 @@ const App: React.FC = () => {
             <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Import Data"><Upload className="w-4 h-4" /></button>
             <button onClick={handleExport} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export JSON"><Download className="w-4 h-4" /></button>
             <button onClick={handleExportCSV} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export CSV"><FileText className="w-4 h-4" /></button>
+            <button onClick={handleExportPDF} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export PDF"><FileDown className="w-4 h-4" /></button>
             <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
             <button onClick={handleReset} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Reset to Empty"><RotateCcw className="w-4 h-4" /></button>
           </div>
@@ -493,6 +626,7 @@ const App: React.FC = () => {
               badmintonConfig={badmintonConfig}
               onDelete={handleDeleteEvent}
               onUpdate={handleUpdateEvent}
+              onEventClick={(e) => setActiveEventId(e.id)}
               totalSavings={totalSavings}
               totalOverspend={totalOverspend}
               savingsCount={savingsCount}

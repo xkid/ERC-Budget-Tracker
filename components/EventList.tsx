@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { EventExpense, Month, BadmintonConfig } from '../types';
-import { Calendar, Gift, Plane, Trophy, Utensils, Trash2 } from 'lucide-react';
+import { Calendar, Gift, Plane, Trophy, Utensils, Trash2, KanbanSquare } from 'lucide-react';
 import { MONTH_ORDER } from '../constants';
 
 interface EventListProps {
@@ -8,6 +9,7 @@ interface EventListProps {
   badmintonConfig: BadmintonConfig;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<EventExpense>) => void;
+  onEventClick: (event: EventExpense) => void;
   totalSavings: number;
   totalOverspend: number;
   savingsCount: number;
@@ -26,13 +28,9 @@ const SimpleNumberInput = ({
   className?: string; 
   placeholder?: string;
 }) => {
-  // Initialize string state. If value is 0, show empty string if desired, or "0"
-  // Here we default 0 to empty string for cleaner UI, unless user types "0"
   const [localValue, setLocalValue] = useState(value === 0 ? '' : value.toString());
 
   useEffect(() => {
-    // Sync with parent value if it changes externally (e.g. reset)
-    // We parse localValue to compare with numeric value to avoid overwriting "10." with "10"
     const currentNumeric = parseFloat(localValue) || 0;
     if (currentNumeric !== value) {
       setLocalValue(value === 0 ? '' : value.toString());
@@ -41,7 +39,6 @@ const SimpleNumberInput = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    // Allow digits and one decimal point
     if (val === '' || /^\d*\.?\d*$/.test(val)) {
       setLocalValue(val);
       onChange(parseFloat(val) || 0);
@@ -70,12 +67,20 @@ const getIcon = (type: string) => {
   }
 };
 
-export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, onDelete, onUpdate, totalSavings, totalOverspend, savingsCount, overspendCount }) => {
+export const EventList: React.FC<EventListProps> = ({ 
+  events, 
+  badmintonConfig, 
+  onDelete, 
+  onUpdate, 
+  onEventClick, 
+  totalSavings, 
+  totalOverspend,
+  savingsCount,
+  overspendCount
+}) => {
   
-  // Combine Regular Events with Badminton (Visual only)
   const allEvents = [...events];
 
-  // Helper to check if a month has events
   const eventsByMonth = allEvents.reduce((acc, event) => {
     if (!acc[event.month]) acc[event.month] = [];
     acc[event.month].push(event);
@@ -115,7 +120,6 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
               const settings = badmintonConfig.months[month];
               const isBadmintonActive = settings?.isSelected;
               
-              // Calculate cost based on individual sessions
               const monthlyBadmintonCost = isBadmintonActive 
                 ? settings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0)
                 : 0;
@@ -130,7 +134,6 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
                     </td>
                   </tr>
 
-                  {/* Badminton Row */}
                   {isBadmintonActive && (
                     <tr className="group hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-400 border-r border-slate-100 last:border-r-0"></td>
@@ -160,7 +163,6 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
                     </tr>
                   )}
 
-                  {/* Event Rows */}
                   {monthlyEvents.map((event) => {
                     const hasActual = event.actualAmount !== undefined && event.actualAmount !== null;
                     const variance = hasActual ? (event.amount - (event.actualAmount || 0)) : 0;
@@ -170,9 +172,9 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
                     return (
                       <tr key={event.id} className="group hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-sm text-slate-500 font-medium border-r border-slate-100 last:border-r-0"></td>
-                        <td className="px-4 py-3 border-r border-slate-100 last:border-r-0">
+                        <td className="px-4 py-3 border-r border-slate-100 last:border-r-0 relative">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg bg-white border border-slate-100 shadow-sm`}>
+                            <div className={`p-2 rounded-lg bg-white border border-slate-100 shadow-sm cursor-pointer hover:bg-slate-50`} onClick={() => onEventClick(event)}>
                               {getIcon(event.type)}
                             </div>
                             <div className="w-full">
@@ -184,7 +186,12 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
                               />
                               <div className="flex items-center gap-2 mt-1">
                                 <p className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{event.type}</p>
-                                {event.notes && <p className="text-xs text-rose-500">{event.notes}</p>}
+                                <button 
+                                  onClick={() => onEventClick(event)}
+                                  className="text-[10px] text-emerald-600 hover:underline flex items-center gap-1"
+                                >
+                                  Open Planner &gt;
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -221,13 +228,22 @@ export const EventList: React.FC<EventListProps> = ({ events, badmintonConfig, o
                           )}
                         </td>
                         <td className="px-4 py-3 text-center last:border-r-0">
-                          <button 
-                            onClick={() => onDelete(event.id)}
-                            className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                            title="Delete Event"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button 
+                              onClick={() => onEventClick(event)}
+                              className="p-1.5 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                              title="Open Planner"
+                            >
+                              <KanbanSquare className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => onDelete(event.id)}
+                              className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                              title="Delete Event"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
