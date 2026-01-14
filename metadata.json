@@ -1,0 +1,5 @@
+{
+  "name": "Elcomp Recreation Budget Tracker",
+  "description": "A comprehensive budget planning tool for the Recreation Club, featuring income tracking, event expense management, badminton cost calculation, and AI-powered event suggestion parsing.",
+  "requestFramePermissions": []
+}
