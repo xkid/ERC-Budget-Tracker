@@ -12,7 +12,7 @@ import { SummaryCard } from './components/SummaryCard';
 import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
 import { BadmintonCalculator } from './components/BadmintonCalculator';
-import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign } from 'lucide-react';
+import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign, FileText } from 'lucide-react';
 
 const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
@@ -98,6 +98,89 @@ const App: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportCSV = () => {
+    // Helper to escape CSV fields
+    const escape = (val: string | number) => {
+        if (typeof val === 'number') return val.toFixed(2);
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+    };
+
+    const rows: string[][] = [];
+
+    // 1. Summary
+    rows.push(['SUMMARY']);
+    rows.push(['Total Budget', 'Planned Expenses', 'Projected Balance', 'Actual Expenses', 'Actual Balance']);
+    rows.push([totalBudget, grandTotalPlanned, projectedBalance, totalActualSpent, actualBalance].map(escape));
+    rows.push([]);
+
+    // 2. Income Sources
+    rows.push(['INCOME SOURCES']);
+    const monthHeaders = MONTH_ORDER.map(m => m);
+    rows.push(['Source', 'Category', 'SubCategory', ...monthHeaders, 'Total']);
+    incomeSources.forEach(source => {
+        const monthlyValues = MONTH_ORDER.map(m => source.monthlyAmounts[m] || 0);
+        const sourceTotal = monthlyValues.reduce((a, b) => a + b, 0);
+        rows.push([
+            source.name,
+            source.category,
+            source.subCategory,
+            ...monthlyValues,
+            sourceTotal
+        ].map(escape));
+    });
+    rows.push([]);
+
+    // 3. Events & Expenses
+    rows.push(['EXPENSES (EVENTS & BADMINTON)']);
+    rows.push(['Month', 'Description', 'Type', 'Planned Amount', 'Actual Amount', 'Variance']);
+    
+    MONTH_ORDER.forEach(month => {
+        // Badminton
+        const badmSettings = badmintonConfig.months[month];
+        if (badmSettings && badmSettings.isSelected) {
+            const badmCost = badmSettings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0);
+             rows.push([
+                month,
+                'Badminton Sessions',
+                'Sport',
+                badmCost,
+                0, 
+                badmCost // Variance (Planned - Actual)
+            ].map(escape));
+        }
+
+        // Events
+        const monthEvents = events.filter(e => e.month === month);
+        monthEvents.forEach(e => {
+            const planned = e.amount;
+            const actual = e.actualAmount || 0;
+            const variance = planned - actual;
+            rows.push([
+                month,
+                e.name,
+                e.type,
+                planned,
+                actual,
+                variance
+            ].map(escape));
+        });
+    });
+
+    const csvContent = rows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rec_club_budget_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -305,7 +388,8 @@ const App: React.FC = () => {
             />
             
             <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Import Data"><Upload className="w-4 h-4" /></button>
-            <button onClick={handleExport} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export Data"><Download className="w-4 h-4" /></button>
+            <button onClick={handleExport} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export JSON"><Download className="w-4 h-4" /></button>
+            <button onClick={handleExportCSV} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export CSV"><FileText className="w-4 h-4" /></button>
             <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
             <button onClick={handleReset} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Reset to Empty"><RotateCcw className="w-4 h-4" /></button>
           </div>
@@ -329,16 +413,16 @@ const App: React.FC = () => {
               icon={<DollarSign className="w-5 h-5" />}
             />
           <SummaryCard 
-              title="Actual Expenses" 
-              amount={totalActualSpent} 
-              type="neutral"
-              icon={<Receipt className="w-5 h-5" />}
-          />
-          <SummaryCard 
             title="Projected Balance" 
             amount={projectedBalance} 
             type="info"
             icon={<Wallet className="w-5 h-5" />}
+          />
+          <SummaryCard 
+              title="Actual Expenses" 
+              amount={totalActualSpent} 
+              type="neutral"
+              icon={<Receipt className="w-5 h-5" />}
           />
           <SummaryCard 
             title="Actual Balance" 
