@@ -12,7 +12,7 @@ import { SummaryCard } from './components/SummaryCard';
 import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
 import { BadmintonCalculator } from './components/BadmintonCalculator';
-import { Plus, Wallet, Receipt, Download, Upload, RotateCcw } from 'lucide-react';
+import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle } from 'lucide-react';
 
 const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
@@ -133,23 +133,15 @@ const App: React.FC = () => {
 
   const handleReset = () => {
     if (confirm('Are you sure you want to CLEAR all data? This will set all values to zero and empty lists. This cannot be undone.')) {
-      // Clear Events
       setEvents([]);
-      
-      // Zero out Income Sources (keep structure)
       setIncomeSources(prev => prev.map(source => {
         const zeroedMonths: Record<string, number> = {};
         MONTH_ORDER.forEach(m => zeroedMonths[m] = 0);
         return { ...source, monthlyAmounts: zeroedMonths };
       }));
-      
-      // Zero Carry Over
       setCarryOver(0);
-      
-      // Clear Badminton Config
       setBadmintonConfig(createEmptyBadmintonConfig());
       
-      // Clear storage
       localStorage.removeItem(STORAGE_KEYS.EVENTS);
       localStorage.removeItem(STORAGE_KEYS.INCOME);
       localStorage.removeItem(STORAGE_KEYS.CARRY_OVER);
@@ -171,12 +163,11 @@ const App: React.FC = () => {
   const totalBadmintonCost = useMemo(() => {
     return Object.values(badmintonConfig.months).reduce((acc, settings) => {
       if (!settings.isSelected) return acc;
-      // Sum up individual session costs
       return acc + settings.sessions.reduce((sAcc, s) => sAcc + (s.rate * s.courts * s.hours), 0);
     }, 0);
   }, [badmintonConfig]);
 
-  const totalEventExpenses = useMemo(() => {
+  const totalEventPlanned = useMemo(() => {
     return events.reduce((acc, curr) => acc + curr.amount, 0);
   }, [events]);
 
@@ -184,16 +175,45 @@ const App: React.FC = () => {
     return events.reduce((acc, curr) => acc + (curr.actualAmount || 0), 0);
   }, [events]);
 
-  const grandTotalPlanned = totalEventExpenses + totalBadmintonCost;
-  const remainingBudget = totalBudget - grandTotalPlanned;
+  // Alert Logic
+  const grandTotalPlanned = totalEventPlanned + totalBadmintonCost;
+  const projectedBalance = totalBudget - grandTotalPlanned;
+  const actualBalance = totalBudget - totalActualSpent;
+
+  // Calculate Variance for events that have actuals
+  const { variance, totalPlannedForCompleted } = useMemo(() => {
+    let plannedSum = 0;
+    let actualSum = 0;
+    
+    events.forEach(e => {
+        if (e.actualAmount !== undefined && e.actualAmount > 0) {
+            plannedSum += e.amount;
+            actualSum += e.actualAmount;
+        }
+    });
+    
+    return {
+        variance: plannedSum - actualSum, // Positive = Under Budget (Good), Negative = Over Budget (Bad)
+        totalPlannedForCompleted: plannedSum
+    };
+  }, [events]);
+
+  const isOverBudget = variance < 0;
   
+  // Alert color logic for Actuals
+  const getActualsStatusColor = () => {
+      // If we spent more than planned on the specific events we tracked
+      if (variance < 0) return 'negative'; 
+      // If we are getting close (e.g., spent > 90% of planned for those events)
+      if (totalPlannedForCompleted > 0 && (totalPlannedForCompleted - variance) / totalPlannedForCompleted > 0.9) return 'warning';
+      return 'neutral';
+  };
+
   // --- Event Handlers ---
   
   const handleAddEvent = () => {
     if (!newName.trim()) return;
-    
     const amountVal = parseFloat(newAmount) || 0;
-    
     const newEvent: EventExpense = {
       id: Math.random().toString(36).substr(2, 9),
       name: newName,
@@ -202,7 +222,6 @@ const App: React.FC = () => {
       actualAmount: 0,
       type: 'Event' 
     };
-
     setEvents(prev => [...prev, newEvent]);
     setNewName('');
     setNewAmount('');
@@ -216,26 +235,39 @@ const App: React.FC = () => {
     setEvents(prev => prev.map(e => {
       if (e.id !== id) return e;
       const updatedEvent = { ...e, ...updates };
-      
       if (updates.amount && updates.amount > 0 && e.notes === 'Budget Pending') {
         updatedEvent.notes = undefined;
       }
-      
       return updatedEvent;
     }));
   };
 
+  // --- Income Handlers ---
+
   const handleUpdateIncome = (id: string, month: string, amount: number) => {
     setIncomeSources(prev => prev.map(s => {
       if (s.id !== id) return s;
-      return {
-        ...s,
-        monthlyAmounts: {
-          ...s.monthlyAmounts,
-          [month]: amount
-        }
-      };
+      return { ...s, monthlyAmounts: { ...s.monthlyAmounts, [month]: amount } };
     }));
+  };
+
+  const handleAddIncomeSource = () => {
+    const newSource: IncomeSource = {
+        id: `inc-${Date.now()}`,
+        name: 'New Collection Source',
+        category: 'Company',
+        subCategory: 'Trading',
+        monthlyAmounts: MONTH_ORDER.reduce((acc, m) => ({...acc, [m]: 0}), {})
+    };
+    setIncomeSources(prev => [...prev, newSource]);
+  };
+
+  const handleDeleteIncomeSource = (id: string) => {
+      setIncomeSources(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleUpdateIncomeDetails = (id: string, name: string, category: string) => {
+      setIncomeSources(prev => prev.map(s => s.id === id ? { ...s, name, category: category as IncomeSource['category'] } : s));
   };
 
   return (
@@ -265,31 +297,10 @@ const App: React.FC = () => {
               className="hidden" 
             />
             
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-              title="Import Data"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-
-            <button 
-              onClick={handleExport}
-              className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-              title="Export Data"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
+            <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Import Data"><Upload className="w-4 h-4" /></button>
+            <button onClick={handleExport} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export Data"><Download className="w-4 h-4" /></button>
             <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
-
-            <button 
-              onClick={handleReset}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-              title="Reset to Empty"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            <button onClick={handleReset} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Reset to Empty"><RotateCcw className="w-4 h-4" /></button>
           </div>
         </div>
       </header>
@@ -299,27 +310,43 @@ const App: React.FC = () => {
         {/* Top Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <SummaryCard 
-            title="Total Available Budget" 
-            amount={totalBudget} 
-            type="info"
+            title="Projected Balance" 
+            amount={projectedBalance} 
+            type={projectedBalance >= 0 ? 'info' : 'negative'}
             icon={<Wallet className="w-5 h-5" />}
           />
           <SummaryCard 
-            title="Total Planned Expenses" 
-            amount={grandTotalPlanned} 
-            type="neutral"
+            title="Actual Balance" 
+            amount={actualBalance} 
+            type={actualBalance > 0 ? 'positive' : 'neutral'}
           />
-          <SummaryCard 
-            title="Event Actuals (YTD)" 
-            amount={totalActualSpent} 
-            type="neutral"
-            icon={<Receipt className="w-5 h-5" />}
-          />
-          <SummaryCard 
-            title="Projected Balance" 
-            amount={remainingBudget} 
-            type={remainingBudget >= 0 ? 'positive' : 'negative'}
-          />
+          
+          <div className="relative">
+             <SummaryCard 
+                title="Total Planned Expenses" 
+                amount={grandTotalPlanned} 
+                type="neutral"
+              />
+          </div>
+
+          <div className="relative">
+            {totalActualSpent > 0 && (
+                <div className={`absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1
+                    ${isOverBudget ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
+                    {isOverBudget ? 'Over Budget' : 'Under Budget'}
+                    <span>{isOverBudget ? '-' : '+'} RM {Math.abs(variance).toLocaleString()}</span>
+                </div>
+            )}
+            <SummaryCard 
+                title="Event Actuals (YTD)" 
+                amount={totalActualSpent} 
+                type={getActualsStatusColor() === 'negative' ? 'negative' : getActualsStatusColor() === 'warning' ? 'info' : 'neutral'} // Reusing info for yellow-ish look or handle custom
+                icon={getActualsStatusColor() === 'negative' ? <AlertTriangle className="w-5 h-5 text-rose-500" /> : <Receipt className="w-5 h-5" />}
+            />
+             {getActualsStatusColor() === 'warning' && (
+                  <div className="absolute inset-0 border-2 border-yellow-400 rounded-xl pointer-events-none opacity-50"></div>
+             )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -397,6 +424,9 @@ const App: React.FC = () => {
               carryOver={carryOver}
               onUpdateCarryOver={setCarryOver}
               onUpdateIncome={handleUpdateIncome}
+              onAddSource={handleAddIncomeSource}
+              onDeleteSource={handleDeleteIncomeSource}
+              onUpdateSourceDetails={handleUpdateIncomeDetails}
             />
           </div>
 
