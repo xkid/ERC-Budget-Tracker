@@ -15,7 +15,7 @@ import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
 import { BadmintonCalculator } from './components/BadmintonCalculator';
 import { EventPlanner } from './components/EventPlanner';
-import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign, FileText, FileDown } from 'lucide-react';
+import { Plus, Wallet, Receipt, Download, Upload, RotateCcw, AlertTriangle, Coins, DollarSign, FileText, FileDown, Loader2 } from 'lucide-react';
 
 const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
@@ -58,6 +58,7 @@ const App: React.FC = () => {
   
   // View State for Routing
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Manual Input State
   const [newMonth, setNewMonth] = useState<Month>(Month.Jan);
@@ -241,15 +242,73 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    setIsGeneratingPdf(true);
+    // Give React time to render the loading state
+    await new Promise(r => setTimeout(r, 100));
+
     const doc = new jsPDF();
     const fmtMoney = (num: number) => `RM ${num.toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
 
+    let fontName = 'helvetica'; // Fallback
+    const customFontName = 'SimHei';
+
+    try {
+      // Using SimHei TTF from a CDN. SimHei is a standard Chinese font widely compatible.
+      // We use a GitHub raw link proxied via jsDelivr for reliability.
+      const fontUrl = 'https://cdn.jsdelivr.net/gh/StellarCN/scp_zh@master/fonts/SimHei.ttf';
+      
+      const response = await fetch(fontUrl);
+      if (!response.ok) throw new Error(`Failed to fetch font: ${response.statusText}`);
+      
+      const blob = await response.blob();
+      const reader = new FileReader();
+      
+      await new Promise((resolve, reject) => {
+        reader.onload = () => {
+          try {
+            const result = reader.result as string;
+            // result is "data:font/ttf;base64,..."
+            const base64 = result.split(',')[1];
+            
+            if (base64) {
+              // Add the font to VFS
+              doc.addFileToVFS('SimHei.ttf', base64);
+              // Register the font
+              doc.addFont('SimHei.ttf', customFontName, 'normal');
+              // Set it as active immediately
+              doc.setFont(customFontName);
+              fontName = customFontName;
+              resolve(true);
+            } else {
+              reject(new Error("Empty base64 result"));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn("Could not load Chinese font. PDF will use standard font.", e);
+      alert("Note: Chinese characters may not display correctly because the font server could not be reached.");
+    }
+
+    // --- Generate Content ---
+
     // Title
+    doc.setFont(fontName);
     doc.setFontSize(18);
     doc.text("Recreation Club Budget Summary", 14, 20);
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    // Common style object to force usage of the custom font in autoTable
+    const tableStyles = {
+        font: fontName,
+        fontStyle: 'normal'
+    };
 
     // 1. Summary Table
     const summaryData = [
@@ -265,7 +324,10 @@ const App: React.FC = () => {
       head: [['Metric', 'Amount']],
       body: summaryData,
       theme: 'striped',
-      headStyles: { fillColor: [16, 185, 129] }, // Emerald color
+      // Apply styles to ALL sections to prevent fallback to Helvetica which triggers "No Unicode cmap"
+      styles: { ...tableStyles },
+      headStyles: { fillColor: [16, 185, 129], ...tableStyles },
+      bodyStyles: { ...tableStyles },
       columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' } }
     });
 
@@ -274,9 +336,9 @@ const App: React.FC = () => {
       const total = Object.values(s.monthlyAmounts).reduce((a, b) => a + b, 0);
       return [s.name, s.category, fmtMoney(total)];
     });
-    // Add Carry Over as a row
+    // Add Carry Over
     incomeData.unshift(["Previous Year Balance (2025)", "Carry Over", fmtMoney(carryOver)]);
-    // Add Total Income
+    // Add Total
     incomeData.push(["TOTAL INCOME", "", fmtMoney(totalBudget)]);
 
     doc.text("Income Sources", 14, (doc as any).lastAutoTable.finalY + 15);
@@ -286,7 +348,9 @@ const App: React.FC = () => {
       head: [['Source', 'Category', 'Annual Total']],
       body: incomeData,
       theme: 'grid',
-      headStyles: { fillColor: [59, 130, 246] }, // Blue color
+      styles: { ...tableStyles },
+      headStyles: { fillColor: [59, 130, 246], ...tableStyles },
+      bodyStyles: { ...tableStyles },
       columnStyles: { 2: { halign: 'right' } },
       didParseCell: (data) => {
         if (data.row.index === incomeData.length - 1) {
@@ -299,20 +363,17 @@ const App: React.FC = () => {
     // 3. Expenses Table
     const expenseData: any[] = [];
     MONTH_ORDER.forEach(month => {
-      // Badminton
       const badmSettings = badmintonConfig.months[month];
       if (badmSettings && badmSettings.isSelected) {
         const cost = badmSettings.sessions.reduce((acc, s) => acc + (s.rate * s.courts * s.hours), 0);
         expenseData.push([month, "Badminton Sessions", "Sport", fmtMoney(cost), fmtMoney(0)]);
       }
-      // Events
       const monthEvents = events.filter(e => e.month === month);
       monthEvents.forEach(e => {
         expenseData.push([month, e.name, e.type, fmtMoney(e.amount), fmtMoney(e.actualAmount || 0)]);
       });
     });
 
-    // Add total row for expenses
     expenseData.push(["TOTAL", "", "", fmtMoney(grandTotalPlanned), fmtMoney(totalActualSpent)]);
 
     doc.text("Expense Breakdown", 14, (doc as any).lastAutoTable.finalY + 15);
@@ -322,7 +383,9 @@ const App: React.FC = () => {
       head: [['Month', 'Description', 'Type', 'Planned', 'Actual']],
       body: expenseData,
       theme: 'grid',
-      headStyles: { fillColor: [244, 63, 94] }, // Rose color
+      styles: { ...tableStyles },
+      headStyles: { fillColor: [244, 63, 94], ...tableStyles },
+      bodyStyles: { ...tableStyles },
       columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } },
       didParseCell: (data) => {
         if (data.row.index === expenseData.length - 1) {
@@ -346,7 +409,7 @@ const App: React.FC = () => {
     });
 
     if (taskData.length > 0) {
-        doc.addPage(); // Start details on new page usually
+        doc.addPage();
         doc.text("Event Planner Details", 14, 20);
         
         autoTable(doc, {
@@ -354,12 +417,15 @@ const App: React.FC = () => {
             head: [['Month', 'Event', 'Task', 'Assignee', 'Status', 'Cost']],
             body: taskData,
             theme: 'striped',
-            headStyles: { fillColor: [100, 116, 139] }, // Slate color
+            styles: { ...tableStyles },
+            headStyles: { fillColor: [100, 116, 139], ...tableStyles },
+            bodyStyles: { ...tableStyles },
             columnStyles: { 5: { halign: 'right' } }
         });
     }
 
     doc.save(`rec_club_summary_${new Date().toISOString().split('T')[0]}.pdf`);
+    setIsGeneratingPdf(false);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -522,7 +588,14 @@ const App: React.FC = () => {
             <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Import Data"><Upload className="w-4 h-4" /></button>
             <button onClick={handleExport} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export JSON"><Download className="w-4 h-4" /></button>
             <button onClick={handleExportCSV} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export CSV"><FileText className="w-4 h-4" /></button>
-            <button onClick={handleExportPDF} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Export PDF"><FileDown className="w-4 h-4" /></button>
+            <button 
+              onClick={handleExportPDF} 
+              disabled={isGeneratingPdf}
+              className={`p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors ${isGeneratingPdf ? 'opacity-50 cursor-wait' : ''}`} 
+              title="Export PDF"
+            >
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+            </button>
             <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
             <button onClick={handleReset} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Reset to Empty"><RotateCcw className="w-4 h-4" /></button>
           </div>
