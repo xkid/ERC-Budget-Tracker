@@ -1,28 +1,32 @@
 
 import React, { useState } from 'react';
 import { EventExpense, EventTask, TaskStatus, ChecklistItem } from '../types';
-import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save, AlignLeft, CheckSquare, Square, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save, AlignLeft, CheckSquare, Square, Link as LinkIcon, ExternalLink, CornerUpLeft } from 'lucide-react';
 
 interface EventPlannerProps {
   event: EventExpense;
   allEvents: EventExpense[]; // Needed for linking dropdown
   isCentral: boolean; // Flag to determine if this is the shared board
   centralTasks: EventTask[]; // The shared tasks
+  returnToEvent?: EventExpense; // The event to return to (e.g., Central Board)
   onBack: () => void;
   onUpdateEvent: (updatedEvent: EventExpense) => void;
   onUpdateCentralTasks: (tasks: EventTask[]) => void;
   onNavigateToEvent: (eventId: string) => void; // Callback to jump to another event
+  onReturn?: () => void; // Callback to go back to the source event
 }
 
 export const EventPlanner: React.FC<EventPlannerProps> = ({ 
   event, 
   allEvents,
   isCentral, 
-  centralTasks, 
+  centralTasks,
+  returnToEvent,
   onBack, 
   onUpdateEvent, 
   onUpdateCentralTasks,
-  onNavigateToEvent
+  onNavigateToEvent,
+  onReturn
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
@@ -60,7 +64,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({
       id: `task-${Date.now()}`,
       title: newTaskTitle,
       description: newTaskDescription,
-      assignee: newTaskAssignee || 'Unassigned',
+      assignee: newTaskAssignee || 'Team',
       budget: parseFloat(newTaskBudget) || 0,
       status: 'Todo',
       checklist: [],
@@ -444,127 +448,119 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 flex flex-col animate-in fade-in zoom-in-95 duration-200">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
-            className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-4 transition-colors text-sm font-medium"
+            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
+            title="Back to Dashboard"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to Dashboard
+            <ArrowLeft className="w-5 h-5" />
           </button>
           
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-                    {event.name}
-                    <span className="text-sm font-normal text-slate-500 px-2 py-1 bg-slate-100 rounded-md border border-slate-200">
-                    {event.month}
-                    </span>
-                </h1>
-                {isCentral && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase tracking-wide border border-indigo-200">
-                        Central Board
-                    </span>
-                )}
-              </div>
-              <p className="text-slate-500 text-sm mt-1">Manage tasks, assignments, and operational costs.</p>
-            </div>
-            
-            <div className="flex gap-4">
-               <div className="text-right">
-                 <span className="block text-xs text-slate-400 uppercase font-bold">Total Budget</span>
-                 <span className="block text-xl font-bold text-emerald-600">RM {event.amount.toLocaleString()}</span>
-               </div>
-               <div className="w-px bg-slate-200 h-10"></div>
-               <div className="text-right">
-                 <span className="block text-xs text-slate-400 uppercase font-bold">Allocated</span>
-                 <span className="block text-xl font-bold text-blue-600">RM {totalTaskBudget.toLocaleString()}</span>
-               </div>
-               <div className="w-px bg-slate-200 h-10"></div>
-               <div className="text-right">
-                 <span className="block text-xs text-slate-400 uppercase font-bold">Remaining</span>
-                 <span className={`block text-xl font-bold ${remainingBudget < 0 ? 'text-rose-600' : 'text-slate-600'}`}>
-                   RM {remainingBudget.toLocaleString()}
-                 </span>
-               </div>
-            </div>
+          {returnToEvent && onReturn && (
+              <button 
+                onClick={onReturn}
+                className="flex items-center gap-1 text-xs font-medium bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors"
+              >
+                  <CornerUpLeft className="w-3.5 h-3.5" />
+                  Return to {returnToEvent.name}
+              </button>
+          )}
+
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              {event.name}
+              <span className="text-sm font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{event.month}</span>
+            </h1>
+            <p className="text-xs text-slate-500 flex items-center gap-2">
+                Task Board & Budget Planner
+                {isCentral && <span className="bg-purple-100 text-purple-700 px-1.5 rounded text-[10px] font-bold">CENTRAL BOARD</span>}
+            </p>
           </div>
         </div>
-      </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <span className="block text-xs text-slate-400 uppercase font-bold">Event Budget</span>
+            <span className="block text-lg font-bold text-slate-800">RM {event.amount.toLocaleString()}</span>
+          </div>
+          <div className="h-8 w-px bg-slate-200"></div>
+           <div className="text-right">
+            <span className="block text-xs text-slate-400 uppercase font-bold">Remaining</span>
+            <span className={`block text-lg font-bold ${remainingBudget < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+              RM {remainingBudget.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Main Board Area */}
+      <div className="flex-1 p-6 overflow-x-auto">
         
         {/* Add Task Bar */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-8">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-emerald-500" /> Add New Task
-          </h3>
-          <div className="flex flex-col gap-3">
-             <div className="flex flex-col md:flex-row gap-3 items-start">
-               <div className="flex-1 w-full space-y-2">
-                  <input 
-                    type="text" 
-                    placeholder="Task Title"
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+           <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+             <Plus className="w-4 h-4 text-emerald-500" /> New Task
+           </h3>
+           <div className="flex flex-col md:flex-row gap-3 items-start">
+              <div className="flex-1 w-full space-y-2">
+                 <input 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                    placeholder="Task Title (e.g. Book Venue)"
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-medium bg-white text-slate-900"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                  />
-                  <div className="relative">
-                    <AlignLeft className="absolute left-3 top-2.5 w-4 h-4 text-slate-300" />
-                    <input 
-                      type="text" 
-                      placeholder="Description (optional)"
-                      value={newTaskDescription}
-                      onChange={(e) => setNewTaskDescription(e.target.value)}
-                      className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 bg-white"
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                    />
-                  </div>
-               </div>
-               <div className="flex gap-3 w-full md:w-auto">
-                <div className="relative flex-1 md:w-40">
-                  <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                  <input 
-                    type="text" 
+                 />
+                 <input 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                    placeholder="Description (optional)"
+                    value={newTaskDescription}
+                    onChange={(e) => setNewTaskDescription(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                 />
+              </div>
+              <div className="w-full md:w-48 relative">
+                 <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                 <input 
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
                     placeholder="Assignee"
                     value={newTaskAssignee}
                     onChange={(e) => setNewTaskAssignee(e.target.value)}
-                    className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                  />
-                </div>
-                <div className="relative w-32">
-                  <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">RM</span>
-                  <input 
-                    type="number" 
-                    placeholder="Cost"
+                 />
+                 <div className="text-[10px] text-slate-400 mt-1 pl-1">Default: Team</div>
+              </div>
+              <div className="w-full md:w-32 relative">
+                 <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">RM</span>
+                 <input 
+                    type="number"
+                    className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
+                    placeholder="0"
                     value={newTaskBudget}
                     onChange={(e) => setNewTaskBudget(e.target.value)}
-                    className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                  />
-                </div>
-                <button 
-                  onClick={handleAddTask}
-                  className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  Add
-                </button>
-               </div>
-             </div>
-          </div>
+                 />
+              </div>
+              <button 
+                onClick={handleAddTask}
+                disabled={!newTaskTitle.trim()}
+                className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm h-[42px]"
+              >
+                Add
+              </button>
+           </div>
         </div>
 
-        {/* Kanban Board */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-          {renderColumn('Todo', 'To Do', 'text-slate-500', <Circle className="w-5 h-5" />)}
-          {renderColumn('InProgress', 'In Progress', 'text-blue-500', <Clock className="w-5 h-5" />)}
-          {renderColumn('Done', 'Completed', 'text-emerald-500', <CheckCircle2 className="w-5 h-5" />)}
+        {/* Columns */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full items-start pb-10">
+          {renderColumn('Todo', 'To Do', 'border-slate-300 text-slate-600', <Circle className="w-5 h-5 text-slate-400" />)}
+          {renderColumn('InProgress', 'In Progress', 'border-blue-300 text-blue-600', <Clock className="w-5 h-5 text-blue-500" />)}
+          {renderColumn('Done', 'Completed', 'border-emerald-300 text-emerald-600', <CheckCircle2 className="w-5 h-5 text-emerald-500" />)}
         </div>
+
       </div>
     </div>
   );

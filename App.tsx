@@ -64,6 +64,7 @@ const App: React.FC = () => {
   
   // View State for Routing
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const [returnToEventId, setReturnToEventId] = useState<string | null>(null); // Track return path
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Manual Input State
@@ -422,33 +423,94 @@ const App: React.FC = () => {
       }
     });
 
-    // 4. Detailed Tasks Table
-    const taskData: any[] = [];
-    MONTH_ORDER.forEach(month => {
-        const monthEvents = events.filter(e => e.month === month);
-        monthEvents.forEach(e => {
-            if (e.tasks && e.tasks.length > 0) {
-                e.tasks.forEach(task => {
-                    const desc = task.description ? `\n(${task.description})` : '';
-                    taskData.push([month, e.name, task.title + desc, task.assignee, task.status, fmtMoney(task.budget)]);
-                });
+    // 4. Detailed Tasks Table Grouped by Assignee
+    const tasksFlat: { person: string; context: string; details: string; status: string; cost: number }[] = [];
+    
+    // Helper to format rich task content
+    const formatTaskDetails = (task: EventTask) => {
+        const parts = [task.title];
+        if (task.description) parts.push(`Desc: ${task.description}`);
+        
+        if (task.checklist && task.checklist.length > 0) {
+            const cl = task.checklist.map(i => `[${i.completed?'x':' '}] ${i.text}`).join('\n');
+            parts.push(`Checklist:\n${cl}`);
+        }
+        
+        if (task.linkedEventId) {
+            const linked = events.find(e => e.id === task.linkedEventId);
+            if (linked) {
+                parts.push(`Linked Event: ${linked.name} (${linked.month})`);
             }
-        });
+        }
+        return parts.join('\n\n');
+    };
+
+    // Collect from events
+    events.forEach(e => {
+        if (e.tasks && e.tasks.length > 0) {
+            e.tasks.forEach(task => {
+                tasksFlat.push({
+                    person: task.assignee || 'Unassigned',
+                    context: `${e.name}\n(${e.month})`,
+                    details: formatTaskDetails(task),
+                    status: task.status,
+                    cost: task.budget
+                });
+            });
+        }
     });
 
-    if (taskData.length > 0) {
+    // Collect from Central Board
+    if (centralBoardTasks && centralBoardTasks.length > 0) {
+        centralBoardTasks.forEach(task => {
+             tasksFlat.push({
+                person: task.assignee || 'Unassigned',
+                context: 'ERC Meeting\n(Central Board)',
+                details: formatTaskDetails(task),
+                status: task.status,
+                cost: task.budget
+             });
+        });
+    }
+
+    // Sort by Person Name
+    tasksFlat.sort((a, b) => a.person.localeCompare(b.person));
+
+    if (tasksFlat.length > 0) {
         doc.addPage();
-        doc.text("Event Planner Details", 14, 20);
+        doc.text("Task Assignments (Grouped by Person)", 14, 20);
         
+        const taskBody = tasksFlat.map(t => [
+            t.person,
+            t.context,
+            t.details,
+            t.status,
+            fmtMoney(t.cost)
+        ]);
+
         autoTable(doc, {
             startY: 25,
-            head: [['Month', 'Event', 'Task', 'Assignee', 'Status', 'Cost']],
-            body: taskData,
-            theme: 'striped',
-            styles: { ...tableStyles },
+            head: [['Assignee', 'Event Context', 'Task Details', 'Status', 'Cost']],
+            body: taskBody,
+            theme: 'grid',
+            styles: { ...tableStyles, cellPadding: 3, valign: 'top', overflow: 'linebreak' },
             headStyles: { fillColor: [100, 116, 139], ...tableStyles },
             bodyStyles: { ...tableStyles },
-            columnStyles: { 5: { halign: 'right' } }
+            columnStyles: { 
+                0: { fontStyle: 'bold', cellWidth: 25 }, 
+                1: { cellWidth: 35 },
+                2: { cellWidth: 75 },
+                4: { halign: 'right' } 
+            },
+            // Grouping visual effect: Clear repetitive names
+            didParseCell: (data) => {
+                 if (data.column.index === 0 && data.row.index > 0) {
+                     const prevRow = data.table.body[data.row.index - 1];
+                     if (prevRow && prevRow.raw && (prevRow.raw as any[])[0] === (data.cell.raw)) {
+                         data.cell.text = []; // Clear text if same as above
+                     }
+                 }
+            }
         });
     }
 
@@ -548,6 +610,45 @@ const App: React.FC = () => {
       setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
   };
 
+  // --- Drag and Drop Reorder ---
+  const handleReorderEvents = (draggedId: string, targetId: string | null, targetMonth: Month) => {
+      setEvents(prev => {
+          const draggedEvent = prev.find(e => e.id === draggedId);
+          if (!draggedEvent) return prev;
+
+          // Remove dragged event from list
+          const remainingEvents = prev.filter(e => e.id !== draggedId);
+          
+          // Update its month
+          const updatedEvent = { ...draggedEvent, month: targetMonth };
+          
+          if (targetId) {
+              // Dropped on another event: insert before it
+              const targetIndex = remainingEvents.findIndex(e => e.id === targetId);
+              if (targetIndex !== -1) {
+                  const newEvents = [...remainingEvents];
+                  newEvents.splice(targetIndex, 0, updatedEvent);
+                  return newEvents;
+              }
+          } else {
+              // Dropped on a month header: insert at the beginning of that month group
+              // We find the index of the first event belonging to that month in the remaining list
+              const firstInMonthIndex = remainingEvents.findIndex(e => e.month === targetMonth);
+              if (firstInMonthIndex !== -1) {
+                  const newEvents = [...remainingEvents];
+                  newEvents.splice(firstInMonthIndex, 0, updatedEvent);
+                  return newEvents;
+              }
+              // If no events in that month, order relative to other months doesn't matter for display (since it's grouped),
+              // but appending is safe.
+              return [...remainingEvents, updatedEvent];
+          }
+          
+          // Fallback if target not found (shouldn't happen often)
+          return [...remainingEvents, updatedEvent];
+      });
+  };
+
   // --- Income Handlers ---
 
   const handleUpdateIncome = (id: string, month: string, amount: number) => {
@@ -578,8 +679,31 @@ const App: React.FC = () => {
 
   // --- View Switching ---
 
+  const handleNavigateToEvent = (targetId: string) => {
+    // If currently viewing an event (e.g. Central Board), track it as the return path
+    if (activeEventId) {
+        setReturnToEventId(activeEventId);
+    }
+    setActiveEventId(targetId);
+  };
+
+  const handleReturnToSource = () => {
+    if (returnToEventId) {
+        setActiveEventId(returnToEventId);
+        setReturnToEventId(null);
+    }
+  };
+
+  const handleBackToDashboard = () => {
+    setActiveEventId(null);
+    setReturnToEventId(null); // Clear return path when going to dashboard
+  };
+
   if (activeEventId) {
     const activeEvent = events.find(e => e.id === activeEventId);
+    // Determine the return event object if return ID is set
+    const returnToEvent = returnToEventId ? events.find(e => e.id === returnToEventId) : undefined;
+
     if (activeEvent) {
       // Determine if this is an "ERC Meeting" event
       const isCentral = activeEvent.name.toLowerCase().includes('erc meeting');
@@ -590,10 +714,12 @@ const App: React.FC = () => {
           allEvents={events}
           isCentral={isCentral}
           centralTasks={centralBoardTasks}
-          onBack={() => setActiveEventId(null)}
+          returnToEvent={returnToEvent}
+          onBack={handleBackToDashboard}
+          onReturn={handleReturnToSource}
           onUpdateEvent={handleFullUpdateEvent}
           onUpdateCentralTasks={setCentralBoardTasks}
-          onNavigateToEvent={(id) => setActiveEventId(id)}
+          onNavigateToEvent={handleNavigateToEvent}
         />
       );
     }
@@ -741,6 +867,7 @@ const App: React.FC = () => {
               onDelete={handleDeleteEvent}
               onUpdate={handleUpdateEvent}
               onEventClick={(e) => setActiveEventId(e.id)}
+              onReorder={handleReorderEvents}
               totalSavings={totalSavings}
               totalOverspend={totalOverspend}
               savingsCount={savingsCount}

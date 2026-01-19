@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { EventExpense, Month, BadmintonConfig } from '../types';
-import { Calendar, Gift, Plane, Trophy, Utensils, Trash2, KanbanSquare } from 'lucide-react';
+import { Calendar, Gift, Plane, Trophy, Utensils, Trash2, KanbanSquare, GripVertical } from 'lucide-react';
 import { MONTH_ORDER } from '../constants';
 
 interface EventListProps {
@@ -10,6 +10,7 @@ interface EventListProps {
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<EventExpense>) => void;
   onEventClick: (event: EventExpense) => void;
+  onReorder: (draggedId: string, targetId: string | null, targetMonth: Month) => void;
   totalSavings: number;
   totalOverspend: number;
   savingsCount: number;
@@ -73,12 +74,14 @@ export const EventList: React.FC<EventListProps> = ({
   onDelete, 
   onUpdate, 
   onEventClick, 
+  onReorder,
   totalSavings, 
   totalOverspend,
   savingsCount,
   overspendCount
 }) => {
   
+  const [draggedId, setDraggedId] = useState<string | null>(null);
   const allEvents = [...events];
 
   const eventsByMonth = allEvents.reduce((acc, event) => {
@@ -86,6 +89,24 @@ export const EventList: React.FC<EventListProps> = ({
     acc[event.month].push(event);
     return acc;
   }, {} as Record<string, EventExpense[]>);
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string | null, targetMonth: Month) => {
+    e.preventDefault();
+    if (draggedId && draggedId !== targetId) {
+        onReorder(draggedId, targetId, targetMonth);
+    }
+    setDraggedId(null);
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -128,7 +149,11 @@ export const EventList: React.FC<EventListProps> = ({
 
               return (
                 <React.Fragment key={month}>
-                  <tr className="bg-slate-100 border-y border-slate-200">
+                  <tr 
+                    className="bg-slate-100 border-y border-slate-200"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, null, month)}
+                  >
                     <td colSpan={5} className="px-4 py-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
                       {month}
                     </td>
@@ -170,11 +195,28 @@ export const EventList: React.FC<EventListProps> = ({
                     const isUnderBudget = variance > 0 && hasActual && event.actualAmount! > 0;
 
                     return (
-                      <tr key={event.id} className="group hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 text-sm text-slate-500 font-medium border-r border-slate-100 last:border-r-0"></td>
+                      <tr 
+                        key={event.id} 
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, event.id)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, event.id, month)}
+                        className={`group hover:bg-slate-50 transition-colors ${draggedId === event.id ? 'opacity-40' : ''}`}
+                      >
+                        <td className="px-4 py-3 text-sm text-slate-500 font-medium border-r border-slate-100 last:border-r-0">
+                            <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500" title="Drag to reorder">
+                                <GripVertical className="w-4 h-4" />
+                            </div>
+                        </td>
                         <td className="px-4 py-3 border-r border-slate-100 last:border-r-0 relative">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg bg-white border border-slate-100 shadow-sm cursor-pointer hover:bg-slate-50`} onClick={() => onEventClick(event)}>
+                            <div 
+                              className={`p-2 rounded-lg bg-white border border-slate-100 shadow-sm cursor-pointer hover:bg-slate-50`} 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEventClick(event);
+                              }}
+                            >
                               {getIcon(event.type)}
                             </div>
                             <div className="w-full">
@@ -186,9 +228,24 @@ export const EventList: React.FC<EventListProps> = ({
                               />
                               <div className="flex items-center gap-2 mt-1">
                                 <p className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{event.type}</p>
+                                <div className="h-3 w-px bg-slate-200 mx-1"></div>
+                                <select
+                                  value={event.month}
+                                  onChange={(e) => onUpdate(event.id, { month: e.target.value as Month })}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-xs text-slate-500 bg-transparent border border-transparent hover:border-slate-200 rounded px-1 cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
+                                >
+                                  {MONTH_ORDER.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                  ))}
+                                </select>
                                 <button 
-                                  onClick={() => onEventClick(event)}
-                                  className="text-[10px] text-emerald-600 hover:underline flex items-center gap-1"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onEventClick(event);
+                                  }}
+                                  className="text-[10px] text-emerald-600 hover:underline flex items-center gap-1 ml-auto"
                                 >
                                   Open Planner &gt;
                                 </button>
@@ -230,14 +287,21 @@ export const EventList: React.FC<EventListProps> = ({
                         <td className="px-4 py-3 text-center last:border-r-0">
                           <div className="flex items-center justify-center gap-2">
                             <button 
-                              onClick={() => onEventClick(event)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onEventClick(event);
+                              }}
                               className="p-1.5 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
                               title="Open Planner"
                             >
                               <KanbanSquare className="w-4 h-4" />
                             </button>
                             <button 
-                              onClick={() => onDelete(event.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(event.id);
+                              }}
                               className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
                               title="Delete Event"
                             >
