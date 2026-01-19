@@ -89,7 +89,7 @@ const App: React.FC = () => {
   
   const yearlyIncome = useMemo(() => {
     return incomeSources.reduce<number>((total, source) => {
-      const sourceTotal = Object.values(source.monthlyAmounts).reduce((acc, val: number) => acc + val, 0);
+      const sourceTotal = (Object.values(source.monthlyAmounts) as number[]).reduce<number>((acc, val) => acc + val, 0);
       return total + sourceTotal;
     }, 0);
   }, [incomeSources]);
@@ -195,7 +195,7 @@ const App: React.FC = () => {
     rows.push(['Source', 'Category', 'SubCategory', ...monthHeaders, 'Total']);
     incomeSources.forEach(source => {
         const monthlyValues = MONTH_ORDER.map(m => source.monthlyAmounts[m] || 0);
-        const sourceTotal = monthlyValues.reduce((a, b) => a + b, 0);
+        const sourceTotal = monthlyValues.reduce<number>((a, b) => a + b, 0);
         rows.push([source.name, source.category, source.subCategory, ...monthlyValues, sourceTotal].map(escape));
     });
     rows.push([]);
@@ -219,13 +219,16 @@ const App: React.FC = () => {
 
     rows.push([]);
     rows.push(['EVENT PLANNER TASKS (DETAIL)']);
-    rows.push(['Month', 'Event Name', 'Task Description', 'Assignee', 'Status', 'Estimated Cost']);
+    rows.push(['Month', 'Event Name', 'Task', 'Description', 'Checklist', 'Assignee', 'Status', 'Estimated Cost']);
     MONTH_ORDER.forEach(month => {
         const monthEvents = events.filter(e => e.month === month);
         monthEvents.forEach(e => {
             if (e.tasks && e.tasks.length > 0) {
                 e.tasks.forEach(task => {
-                    rows.push([month, e.name, task.title, task.assignee, task.status, task.budget].map(escape));
+                    const checklistStr = task.checklist 
+                        ? task.checklist.map(i => `[${i.completed ? 'x' : ' '}] ${i.text}`).join('; ')
+                        : '';
+                    rows.push([month, e.name, task.title, task.description || '', checklistStr, task.assignee, task.status, task.budget].map(escape));
                 });
             }
         });
@@ -333,7 +336,7 @@ const App: React.FC = () => {
 
     // 2. Income Table
     const incomeData = incomeSources.map(s => {
-      const total = Object.values(s.monthlyAmounts).reduce((a, b) => a + b, 0);
+      const total = (Object.values(s.monthlyAmounts) as number[]).reduce((a, b) => a + b, 0);
       return [s.name, s.category, fmtMoney(total)];
     });
     // Add Carry Over
@@ -402,7 +405,8 @@ const App: React.FC = () => {
         monthEvents.forEach(e => {
             if (e.tasks && e.tasks.length > 0) {
                 e.tasks.forEach(task => {
-                    taskData.push([month, e.name, task.title, task.assignee, task.status, fmtMoney(task.budget)]);
+                    const desc = task.description ? `\n(${task.description})` : '';
+                    taskData.push([month, e.name, task.title + desc, task.assignee, task.status, fmtMoney(task.budget)]);
                 });
             }
         });

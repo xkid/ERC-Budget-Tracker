@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { EventExpense, EventTask, TaskStatus } from '../types';
-import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save } from 'lucide-react';
+import { EventExpense, EventTask, TaskStatus, ChecklistItem } from '../types';
+import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save, AlignLeft, CheckSquare, Square } from 'lucide-react';
 
 interface EventPlannerProps {
   event: EventExpense;
@@ -11,6 +11,7 @@ interface EventPlannerProps {
 
 export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpdateEvent }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
   const [newTaskBudget, setNewTaskBudget] = useState('');
   
@@ -20,8 +21,11 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
   // Edit State
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [editAssignee, setEditAssignee] = useState('');
   const [editBudget, setEditBudget] = useState('');
+  const [editChecklist, setEditChecklist] = useState<ChecklistItem[]>([]);
+  const [checklistInput, setChecklistInput] = useState('');
 
   const tasks = event.tasks || [];
 
@@ -31,15 +35,18 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
     const newTask: EventTask = {
       id: `task-${Date.now()}`,
       title: newTaskTitle,
+      description: newTaskDescription,
       assignee: newTaskAssignee || 'Unassigned',
       budget: parseFloat(newTaskBudget) || 0,
-      status: 'Todo'
+      status: 'Todo',
+      checklist: []
     };
 
     const updatedTasks = [...tasks, newTask];
     onUpdateEvent({ ...event, tasks: updatedTasks });
     
     setNewTaskTitle('');
+    setNewTaskDescription('');
     setNewTaskAssignee('');
     setNewTaskBudget('');
   };
@@ -52,6 +59,21 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
   const handleDeleteTask = (taskId: string) => {
     if(!confirm("Delete this task?")) return;
     const updatedTasks = tasks.filter(t => t.id !== taskId);
+    onUpdateEvent({ ...event, tasks: updatedTasks });
+  };
+
+  const handleToggleTaskCheckItem = (taskId: string, itemId: string) => {
+    const updatedTasks = tasks.map(t => {
+      if (t.id === taskId && t.checklist) {
+        return {
+          ...t,
+          checklist: t.checklist.map(item => 
+            item.id === itemId ? { ...item, completed: !item.completed } : item
+          )
+        };
+      }
+      return t;
+    });
     onUpdateEvent({ ...event, tasks: updatedTasks });
   };
 
@@ -81,8 +103,11 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
   const startEditing = (task: EventTask) => {
     setEditingTaskId(task.id);
     setEditTitle(task.title);
+    setEditDescription(task.description || '');
     setEditAssignee(task.assignee);
     setEditBudget(task.budget.toString());
+    setEditChecklist(task.checklist ? [...task.checklist] : []);
+    setChecklistInput('');
   };
 
   const saveEdit = () => {
@@ -92,8 +117,10 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
         return {
           ...t,
           title: editTitle,
+          description: editDescription,
           assignee: editAssignee,
-          budget: parseFloat(editBudget) || 0
+          budget: parseFloat(editBudget) || 0,
+          checklist: editChecklist
         };
       }
       return t;
@@ -104,6 +131,30 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
 
   const cancelEdit = () => {
     setEditingTaskId(null);
+  };
+
+  // Checklist Edit Handlers
+  const addEditCheckItem = () => {
+    if (!checklistInput.trim()) return;
+    const newItem: ChecklistItem = {
+        id: `cl-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        text: checklistInput.trim(),
+        completed: false
+    };
+    setEditChecklist([...editChecklist, newItem]);
+    setChecklistInput('');
+  };
+
+  const toggleEditCheckItem = (id: string) => {
+      setEditChecklist(editChecklist.map(i => i.id === id ? { ...i, completed: !i.completed } : i));
+  };
+
+  const deleteEditCheckItem = (id: string) => {
+      setEditChecklist(editChecklist.filter(i => i.id !== id));
+  };
+  
+  const updateEditCheckItemText = (id: string, text: string) => {
+      setEditChecklist(editChecklist.map(i => i.id === id ? { ...i, text } : i));
   };
 
 
@@ -136,18 +187,61 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
               return (
                 <div key={task.id} className="bg-white p-3 rounded-lg shadow-md border-2 border-emerald-500/50 space-y-3 animate-in fade-in zoom-in-95 duration-200">
                   <input 
-                    className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-700"
+                    className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none font-medium text-slate-700 bg-white"
                     value={editTitle}
                     onChange={e => setEditTitle(e.target.value)}
                     placeholder="Task Title"
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
                   />
-                  <div className="flex gap-2">
+                  <textarea
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none resize-none text-slate-700 bg-white"
+                    value={editDescription}
+                    onChange={e => setEditDescription(e.target.value)}
+                    placeholder="Description (optional)"
+                    rows={2}
+                  />
+                  
+                  {/* Checklist Editor */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Checklist</h4>
+                    <div className="space-y-2 mb-2">
+                        {editChecklist.map(item => (
+                            <div key={item.id} className="flex items-start gap-2">
+                                <button 
+                                    onClick={() => toggleEditCheckItem(item.id)}
+                                    className={`mt-0.5 ${item.completed ? 'text-emerald-500' : 'text-slate-300'}`}
+                                >
+                                    {item.completed ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                                </button>
+                                <input 
+                                    className={`flex-1 text-xs bg-transparent outline-none border-b border-transparent focus:border-emerald-300 pb-0.5 ${item.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}
+                                    value={item.text}
+                                    onChange={(e) => updateEditCheckItemText(item.id, e.target.value)}
+                                />
+                                <button onClick={() => deleteEditCheckItem(item.id)} className="text-slate-300 hover:text-rose-500">
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Plus className="w-3.5 h-3.5 text-emerald-500" />
+                        <input 
+                            className="flex-1 text-xs border border-slate-200 rounded px-2 py-1.5 focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-700"
+                            placeholder="Add item..."
+                            value={checklistInput}
+                            onChange={(e) => setChecklistInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && addEditCheckItem()}
+                        />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2 border-t border-slate-100">
                     <div className="relative flex-1">
                       <User className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400" />
                       <input 
-                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none"
+                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-700"
                         value={editAssignee}
                         onChange={e => setEditAssignee(e.target.value)}
                         placeholder="Assignee"
@@ -157,7 +251,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                     <div className="relative w-24">
                       <span className="absolute left-2 top-2 text-xs text-slate-400 font-bold">RM</span>
                       <input 
-                        className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none"
+                        className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-700"
                         type="number"
                         value={editBudget}
                         onChange={e => setEditBudget(e.target.value)}
@@ -166,7 +260,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
+                  <div className="flex justify-end gap-2 pt-2">
                     <button onClick={cancelEdit} className="p-1.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 transition-colors">
                       <X className="w-4 h-4" />
                     </button>
@@ -178,6 +272,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
               );
             }
 
+            // --- READ MODE CARD ---
             return (
               <div 
                 key={task.id} 
@@ -185,7 +280,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                 onDragStart={(e) => handleDragStart(e, task.id)}
                 className={`bg-white p-3 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-all group cursor-grab active:cursor-grabbing ${draggedTaskId === task.id ? 'opacity-40 scale-95' : 'opacity-100'}`}
               >
-                <div className="flex justify-between items-start mb-2">
+                <div className="flex justify-between items-start mb-1">
                   <p className="font-medium text-slate-800 text-sm leading-snug">{task.title}</p>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
@@ -205,7 +300,36 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                   </div>
                 </div>
                 
-                <div className="flex items-center justify-between text-xs text-slate-500 mt-3">
+                {task.description && (
+                  <p className="text-xs text-slate-500 mb-3 whitespace-pre-wrap leading-relaxed">
+                    {task.description}
+                  </p>
+                )}
+
+                {/* Checklist Display */}
+                {task.checklist && task.checklist.length > 0 && (
+                    <div className="mb-3 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase mb-1">
+                            <CheckSquare className="w-3 h-3" />
+                            <span>{task.checklist.filter(i => i.completed).length}/{task.checklist.length}</span>
+                        </div>
+                        {task.checklist.map(item => (
+                            <div key={item.id} className="flex items-start gap-1.5 group/item">
+                                <button 
+                                    onClick={() => handleToggleTaskCheckItem(task.id, item.id)}
+                                    className={`mt-0.5 flex-shrink-0 ${item.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}
+                                >
+                                    {item.completed ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                                </button>
+                                <span className={`text-[11px] leading-snug ${item.completed ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
+                                    {item.text}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                
+                <div className="flex items-center justify-between text-xs text-slate-500 mt-2 border-t border-slate-50 pt-2">
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
                       <User className="w-3 h-3" />
@@ -222,7 +346,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
 
                 {/* Mobile/Quick Actions (Visible only if not dragged) */}
                 {draggedTaskId !== task.id && (
-                  <div className="mt-3 flex gap-1 justify-end pt-2 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="mt-2 flex gap-1 justify-end pt-2 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
                     {status !== 'Todo' && (
                       <button 
                         onClick={() => handleUpdateTaskStatus(task.id, 'Todo')}
@@ -314,45 +438,60 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
           <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
             <Plus className="w-4 h-4 text-emerald-500" /> Add New Task
           </h3>
-          <div className="flex flex-col md:flex-row gap-3">
-            <input 
-              type="text" 
-              placeholder="What needs to be done?"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-              onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-            />
-            <div className="flex gap-3">
-              <div className="relative">
-                <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder="Assignee"
-                  value={newTaskAssignee}
-                  onChange={(e) => setNewTaskAssignee(e.target.value)}
-                  className="pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none w-40"
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                />
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">RM</span>
-                <input 
-                  type="number" 
-                  placeholder="Cost"
-                  value={newTaskBudget}
-                  onChange={(e) => setNewTaskBudget(e.target.value)}
-                  className="pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none w-32"
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                />
-              </div>
-              <button 
-                onClick={handleAddTask}
-                className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-              >
-                Add
-              </button>
-            </div>
+          <div className="flex flex-col gap-3">
+             <div className="flex flex-col md:flex-row gap-3 items-start">
+               <div className="flex-1 w-full space-y-2">
+                  <input 
+                    type="text" 
+                    placeholder="Task Title"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-medium bg-white text-slate-900"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                  />
+                  <div className="relative">
+                    <AlignLeft className="absolute left-3 top-2.5 w-4 h-4 text-slate-300" />
+                    <input 
+                      type="text" 
+                      placeholder="Description (optional)"
+                      value={newTaskDescription}
+                      onChange={(e) => setNewTaskDescription(e.target.value)}
+                      className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 bg-white"
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                    />
+                  </div>
+               </div>
+               <div className="flex gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-40">
+                  <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Assignee"
+                    value={newTaskAssignee}
+                    onChange={(e) => setNewTaskAssignee(e.target.value)}
+                    className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                  />
+                </div>
+                <div className="relative w-32">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">RM</span>
+                  <input 
+                    type="number" 
+                    placeholder="Cost"
+                    value={newTaskBudget}
+                    onChange={(e) => setNewTaskBudget(e.target.value)}
+                    className="w-full pl-9 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                  />
+                </div>
+                <button 
+                  onClick={handleAddTask}
+                  className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+                >
+                  Add
+                </button>
+               </div>
+             </div>
           </div>
         </div>
 

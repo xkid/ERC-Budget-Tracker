@@ -25,12 +25,20 @@ export interface IncomeSource {
 
 export type TaskStatus = 'Todo' | 'InProgress' | 'Done';
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface EventTask {
   id: string;
   title: string;
+  description?: string;
   assignee: string;
   budget: number;
   status: TaskStatus;
+  checklist?: ChecklistItem[]; // Added checklist field
 }
 
 export interface EventExpense {
