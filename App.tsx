@@ -9,7 +9,7 @@ import {
   createInitialBadmintonConfig,
   createEmptyBadmintonConfig
 } from './constants';
-import { EventExpense, BadmintonConfig, Month, MonthlyBadmintonSettings, AppData, IncomeSource } from './types';
+import { EventExpense, BadmintonConfig, Month, MonthlyBadmintonSettings, AppData, IncomeSource, EventTask } from './types';
 import { SummaryCard } from './components/SummaryCard';
 import { IncomeBreakdown } from './components/IncomeBreakdown';
 import { EventList } from './components/EventList';
@@ -21,7 +21,8 @@ const STORAGE_KEYS = {
   EVENTS: 'rec_club_events',
   INCOME: 'rec_club_income',
   CARRY_OVER: 'rec_club_carry_over',
-  BADMINTON: 'rec_club_badminton'
+  BADMINTON: 'rec_club_badminton',
+  CENTRAL_TASKS: 'rec_club_central_tasks'
 };
 
 const App: React.FC = () => {
@@ -55,6 +56,11 @@ const App: React.FC = () => {
     }
     return parsed;
   });
+
+  const [centralBoardTasks, setCentralBoardTasks] = useState<EventTask[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CENTRAL_TASKS);
+    return saved ? JSON.parse(saved) : [];
+  });
   
   // View State for Routing
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
@@ -84,6 +90,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.BADMINTON, JSON.stringify(badmintonConfig));
   }, [badmintonConfig]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.CENTRAL_TASKS, JSON.stringify(centralBoardTasks));
+  }, [centralBoardTasks]);
 
   // --- Calculations ---
   
@@ -160,6 +170,7 @@ const App: React.FC = () => {
       incomeSources,
       carryOver,
       badmintonConfig,
+      centralBoardTasks,
       lastUpdated: new Date().toISOString()
     };
     
@@ -233,6 +244,19 @@ const App: React.FC = () => {
             }
         });
     });
+
+    // Central Tasks Export
+    if(centralBoardTasks && centralBoardTasks.length > 0) {
+        rows.push([]);
+        rows.push(['CENTRAL BOARD TASKS (ERC MEETING)']);
+        rows.push(['Task', 'Description', 'Checklist', 'Assignee', 'Status', 'Estimated Cost', 'Linked Event ID']);
+        centralBoardTasks.forEach(task => {
+            const checklistStr = task.checklist 
+                ? task.checklist.map(i => `[${i.completed ? 'x' : ' '}] ${i.text}`).join('; ')
+                : '';
+            rows.push([task.title, task.description || '', checklistStr, task.assignee, task.status, task.budget, task.linkedEventId || ''].map(escape));
+        });
+    }
 
     const csvContent = rows.map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -448,6 +472,9 @@ const App: React.FC = () => {
             setIncomeSources(data.incomeSources);
             setCarryOver(data.carryOver);
             setBadmintonConfig(data.badmintonConfig);
+            if(data.centralBoardTasks) {
+                setCentralBoardTasks(data.centralBoardTasks);
+            }
             alert('Data imported successfully!');
           }
         } else {
@@ -473,11 +500,13 @@ const App: React.FC = () => {
       }));
       setCarryOver(0);
       setBadmintonConfig(createEmptyBadmintonConfig());
+      setCentralBoardTasks([]);
       
       localStorage.removeItem(STORAGE_KEYS.EVENTS);
       localStorage.removeItem(STORAGE_KEYS.INCOME);
       localStorage.removeItem(STORAGE_KEYS.CARRY_OVER);
       localStorage.removeItem(STORAGE_KEYS.BADMINTON);
+      localStorage.removeItem(STORAGE_KEYS.CENTRAL_TASKS);
     }
   };
 
@@ -552,11 +581,19 @@ const App: React.FC = () => {
   if (activeEventId) {
     const activeEvent = events.find(e => e.id === activeEventId);
     if (activeEvent) {
+      // Determine if this is an "ERC Meeting" event
+      const isCentral = activeEvent.name.toLowerCase().includes('erc meeting');
+
       return (
         <EventPlanner 
           event={activeEvent} 
+          allEvents={events}
+          isCentral={isCentral}
+          centralTasks={centralBoardTasks}
           onBack={() => setActiveEventId(null)}
           onUpdateEvent={handleFullUpdateEvent}
+          onUpdateCentralTasks={setCentralBoardTasks}
+          onNavigateToEvent={(id) => setActiveEventId(id)}
         />
       );
     }

@@ -38,7 +38,8 @@ export interface EventTask {
   assignee: string;
   budget: number;
   status: TaskStatus;
-  checklist?: ChecklistItem[]; // Added checklist field
+  checklist?: ChecklistItem[];
+  linkedEventId?: string; // New field to link to another event
 }
 
 export interface EventExpense {
@@ -81,5 +82,6 @@ export interface AppData {
   incomeSources: IncomeSource[];
   carryOver: number;
   badmintonConfig: BadmintonConfig;
+  centralBoardTasks?: EventTask[]; // New field for centralized ERC Meeting tasks
   lastUpdated: string;
 }

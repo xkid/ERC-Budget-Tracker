@@ -1,15 +1,29 @@
 
 import React, { useState } from 'react';
 import { EventExpense, EventTask, TaskStatus, ChecklistItem } from '../types';
-import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save, AlignLeft, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Plus, User, DollarSign, Trash2, CheckCircle2, Circle, Clock, Pencil, X, Save, AlignLeft, CheckSquare, Square, Link as LinkIcon, ExternalLink } from 'lucide-react';
 
 interface EventPlannerProps {
   event: EventExpense;
+  allEvents: EventExpense[]; // Needed for linking dropdown
+  isCentral: boolean; // Flag to determine if this is the shared board
+  centralTasks: EventTask[]; // The shared tasks
   onBack: () => void;
   onUpdateEvent: (updatedEvent: EventExpense) => void;
+  onUpdateCentralTasks: (tasks: EventTask[]) => void;
+  onNavigateToEvent: (eventId: string) => void; // Callback to jump to another event
 }
 
-export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpdateEvent }) => {
+export const EventPlanner: React.FC<EventPlannerProps> = ({ 
+  event, 
+  allEvents,
+  isCentral, 
+  centralTasks, 
+  onBack, 
+  onUpdateEvent, 
+  onUpdateCentralTasks,
+  onNavigateToEvent
+}) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
@@ -25,9 +39,19 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
   const [editAssignee, setEditAssignee] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [editChecklist, setEditChecklist] = useState<ChecklistItem[]>([]);
+  const [editLinkedEventId, setEditLinkedEventId] = useState<string>('');
   const [checklistInput, setChecklistInput] = useState('');
 
-  const tasks = event.tasks || [];
+  // Determine which set of tasks to use
+  const tasks = isCentral ? centralTasks : (event.tasks || []);
+
+  const handleUpdateTasks = (updatedTasks: EventTask[]) => {
+    if (isCentral) {
+      onUpdateCentralTasks(updatedTasks);
+    } else {
+      onUpdateEvent({ ...event, tasks: updatedTasks });
+    }
+  };
 
   const handleAddTask = () => {
     if (!newTaskTitle.trim()) return;
@@ -39,11 +63,11 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
       assignee: newTaskAssignee || 'Unassigned',
       budget: parseFloat(newTaskBudget) || 0,
       status: 'Todo',
-      checklist: []
+      checklist: [],
+      linkedEventId: ''
     };
 
-    const updatedTasks = [...tasks, newTask];
-    onUpdateEvent({ ...event, tasks: updatedTasks });
+    handleUpdateTasks([...tasks, newTask]);
     
     setNewTaskTitle('');
     setNewTaskDescription('');
@@ -53,13 +77,13 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
 
   const handleUpdateTaskStatus = (taskId: string, newStatus: TaskStatus) => {
     const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t);
-    onUpdateEvent({ ...event, tasks: updatedTasks });
+    handleUpdateTasks(updatedTasks);
   };
 
   const handleDeleteTask = (taskId: string) => {
     if(!confirm("Delete this task?")) return;
     const updatedTasks = tasks.filter(t => t.id !== taskId);
-    onUpdateEvent({ ...event, tasks: updatedTasks });
+    handleUpdateTasks(updatedTasks);
   };
 
   const handleToggleTaskCheckItem = (taskId: string, itemId: string) => {
@@ -74,7 +98,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
       }
       return t;
     });
-    onUpdateEvent({ ...event, tasks: updatedTasks });
+    handleUpdateTasks(updatedTasks);
   };
 
   // Drag Handlers
@@ -92,7 +116,6 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
     e.preventDefault();
     if (!draggedTaskId) return;
     
-    // Optimistic update logic could go here, but strict state update is safer
     if (tasks.find(t => t.id === draggedTaskId)?.status !== targetStatus) {
        handleUpdateTaskStatus(draggedTaskId, targetStatus);
     }
@@ -107,6 +130,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
     setEditAssignee(task.assignee);
     setEditBudget(task.budget.toString());
     setEditChecklist(task.checklist ? [...task.checklist] : []);
+    setEditLinkedEventId(task.linkedEventId || '');
     setChecklistInput('');
   };
 
@@ -120,12 +144,13 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
           description: editDescription,
           assignee: editAssignee,
           budget: parseFloat(editBudget) || 0,
-          checklist: editChecklist
+          checklist: editChecklist,
+          linkedEventId: editLinkedEventId
         };
       }
       return t;
     });
-    onUpdateEvent({ ...event, tasks: updatedTasks });
+    handleUpdateTasks(updatedTasks);
     setEditingTaskId(null);
   };
 
@@ -157,7 +182,6 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
       setEditChecklist(editChecklist.map(i => i.id === id ? { ...i, text } : i));
   };
 
-
   const totalTaskBudget = tasks.reduce((sum, t) => sum + t.budget, 0);
   const remainingBudget = event.amount - totalTaskBudget;
 
@@ -182,6 +206,7 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
         <div className="space-y-3 min-h-[100px]">
           {columnTasks.map(task => {
             const isEditing = editingTaskId === task.id;
+            const linkedEvent = task.linkedEventId ? allEvents.find(e => e.id === task.linkedEventId) : null;
 
             if (isEditing) {
               return (
@@ -202,6 +227,25 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                     rows={2}
                   />
                   
+                  {/* Link Event Selector (Only for Central Board) */}
+                  {isCentral && (
+                      <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-50 rounded border border-slate-100">
+                          <LinkIcon className="w-3.5 h-3.5 text-slate-400" />
+                          <select 
+                            className="flex-1 text-xs bg-transparent outline-none text-slate-600"
+                            value={editLinkedEventId}
+                            onChange={(e) => setEditLinkedEventId(e.target.value)}
+                          >
+                            <option value="">-- Link to Event (Optional) --</option>
+                            {allEvents
+                                .filter(e => e.id !== event.id) // Don't link to self
+                                .map(e => (
+                                <option key={e.id} value={e.id}>{e.name} ({e.month})</option>
+                            ))}
+                          </select>
+                      </div>
+                  )}
+
                   {/* Checklist Editor */}
                   <div className="pt-2 border-t border-slate-100">
                     <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Checklist</h4>
@@ -305,6 +349,19 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
                     {task.description}
                   </p>
                 )}
+                
+                {/* Linked Event Button */}
+                {linkedEvent && (
+                    <button 
+                        onClick={() => onNavigateToEvent(linkedEvent.id)}
+                        className="w-full mb-3 flex items-center gap-2 p-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded text-xs text-indigo-700 transition-colors text-left"
+                    >
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        <div className="truncate">
+                            <span className="font-semibold">Linked:</span> {linkedEvent.name}
+                        </div>
+                    </button>
+                )}
 
                 {/* Checklist Display */}
                 {task.checklist && task.checklist.length > 0 && (
@@ -400,12 +457,19 @@ export const EventPlanner: React.FC<EventPlannerProps> = ({ event, onBack, onUpd
           
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-                {event.name} 
-                <span className="text-sm font-normal text-slate-500 px-2 py-1 bg-slate-100 rounded-md border border-slate-200">
-                  {event.month}
-                </span>
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                    {event.name}
+                    <span className="text-sm font-normal text-slate-500 px-2 py-1 bg-slate-100 rounded-md border border-slate-200">
+                    {event.month}
+                    </span>
+                </h1>
+                {isCentral && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase tracking-wide border border-indigo-200">
+                        Central Board
+                    </span>
+                )}
+              </div>
               <p className="text-slate-500 text-sm mt-1">Manage tasks, assignments, and operational costs.</p>
             </div>
             
