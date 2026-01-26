@@ -504,6 +504,19 @@ const App: React.FC = () => {
             },
             // Grouping visual effect: Clear repetitive names
             didParseCell: (data) => {
+                 // Status Styling Logic
+                 if (data.section === 'body') {
+                     const rowData = data.row.raw as any[];
+                     const status = rowData[3];
+
+                     if (status === 'Done') {
+                         data.cell.styles.textColor = [160, 160, 160]; // Light gray
+                     } else if (status === 'InProgress') {
+                         data.cell.styles.fontStyle = 'bold';
+                         data.cell.styles.textColor = [0, 0, 0]; // Black for maximum contrast
+                     }
+                 }
+
                  if (data.column.index === 0 && data.row.index > 0) {
                      const prevRow = data.table.body[data.row.index - 1];
                      if (prevRow && prevRow.raw && (prevRow.raw as any[])[0] === (data.cell.raw)) {
